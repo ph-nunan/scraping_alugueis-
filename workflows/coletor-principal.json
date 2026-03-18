@@ -1,0 +1,235 @@
+{
+  "_meta": {
+    "workflow_id": "1QES1eVsmJgQzFIR",
+    "name": "Scraping Alugueis - Coletor Principal",
+    "version": 37,
+    "last_updated": "2026-03-16",
+    "n8n_instance": "https://n8n.paulonunan.com",
+    "note": "Credenciais (Google Sheets, Firecrawl) foram removidas deste arquivo. Reconfigure ao importar."
+  },
+  "name": "Scraping Alugueis - Coletor Principal",
+  "nodes": [
+    {
+      "id": "a1b2c3d4-0001-0001-0001-a1b2c3d40001",
+      "name": "A cada 6 horas",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [240, 300],
+      "parameters": {
+        "rule": { "interval": [{ "field": "hours", "hoursInterval": 6 }] }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0002-0002-0002-a1b2c3d40002",
+      "name": "Ler Fontes Ativas",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [460, 300],
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "value": "SEU_SHEET_ID_AQUI", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "sources", "mode": "name" },
+        "range": "A:Z",
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "SEU_CREDENTIAL_ID", "name": "Google Sheets - Paulo" }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0006-0006-0006-a1b2c3d40006",
+      "name": "Filtrar Ativas",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [{
+            "id": "cond-ativo",
+            "leftValue": "={{ $json.ativo }}",
+            "rightValue": "FALSE",
+            "operator": { "type": "string", "operation": "notEquals", "rightType": "any" }
+          }],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0012-0012-0012-a1b2c3d40012",
+      "name": "Gerar Paginas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const sources = $input.all();\nconst results = [];\nconst MAX_PAGES = 5;\n\nfor (let si = 0; si < sources.length; si++) {\n  const s = sources[si].json;\n  const url = s.url || '';\n  const noPagination = url.includes('quintoandar.com.br');\n  const maxP = noPagination ? 1 : MAX_PAGES;\n  for (let p = 1; p <= maxP; p++) {\n    let pageUrl = url;\n    if (p > 1) {\n      if (url.includes('olx.com.br')) pageUrl = url + '&o=' + p;\n      else if (url.includes('zapimoveis.com.br')) pageUrl = url + '&pagina=' + p;\n      else if (url.includes('dfimoveis.com.br')) pageUrl = url + '?pagina=' + p;\n      else if (url.includes('rentola.com.br')) pageUrl = url + '?page=' + p;\n      else if (url.includes('imovelweb.com.br')) pageUrl = url.replace('.html', '-pagina-' + p + '.html');\n      else pageUrl = url + '?page=' + p;\n    }\n    results.push({\n      json: { url: pageUrl, nome: s.nome || '', metodo: s.metodo || 'html_json_ld', regiao: s.regiao || '', url_original: url, pagina: p },\n      pairedItem: { item: si }\n    });\n  }\n}\nreturn results;"
+      }
+    },
+    {
+      "id": "a1b2c3d4-0003-0003-0003-a1b2c3d40003",
+      "name": "Buscar Pagina",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1120, 300],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "User-Agent", "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" },
+            { "name": "Accept", "value": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" },
+            { "name": "Accept-Language", "value": "pt-BR,pt;q=0.9,en-US;q=0.8" }
+          ]
+        },
+        "options": { "response": { "response": { "responseFormat": "text" } } }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0011-0011-0011-a1b2c3d40011",
+      "name": "Combinar Fonte",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1340, 300],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            { "id": "cf-data",   "name": "data",         "value": "={{ $json.data || '' }}",                              "type": "string" },
+            { "id": "cf-err",    "name": "error_status", "value": "={{ ($json.error && $json.error.status) || 0 }}",       "type": "number" },
+            { "id": "cf-nome",   "name": "src_nome",     "value": "={{ $('Gerar Paginas').item.json.nome }}",              "type": "string" },
+            { "id": "cf-metodo", "name": "src_metodo",   "value": "={{ $('Gerar Paginas').item.json.metodo }}",            "type": "string" },
+            { "id": "cf-regiao", "name": "src_regiao",   "value": "={{ $('Gerar Paginas').item.json.regiao }}",            "type": "string" },
+            { "id": "cf-url",    "name": "src_url",      "value": "={{ $('Gerar Paginas').item.json.url }}",               "type": "string" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a1b2c3d4-0007-0007-0007-a1b2c3d40007",
+      "name": "Bloqueado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [{
+            "id": "cond-cf",
+            "leftValue": "={{ $json.error_status === 403 || (typeof $json.data === 'string' && $json.data.includes('Cloudflare')) }}",
+            "rightValue": true,
+            "operator": { "type": "boolean", "operation": "true" }
+          }],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0008-0008-0008-a1b2c3d40008",
+      "name": "Firecrawl API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1780, 160],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.firecrawl.dev/v1/scrape",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer SUA_FIRECRAWL_KEY_AQUI" },
+            { "name": "Content-Type",  "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ url: $json.src_url, formats: ['rawHtml'], onlyMainContent: false }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "a1b2c3d4-0009-0009-0009-a1b2c3d40009",
+      "name": "HTML do Firecrawl",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2000, 160],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            { "id": "fc-data",   "name": "data",       "value": "={{ ($json.data && $json.data.rawHtml) || '' }}",  "type": "string" },
+            { "id": "fc-nome",   "name": "src_nome",   "value": "={{ $('Gerar Paginas').item.json.nome }}",         "type": "string" },
+            { "id": "fc-metodo", "name": "src_metodo", "value": "={{ $('Gerar Paginas').item.json.metodo }}",       "type": "string" },
+            { "id": "fc-regiao", "name": "src_regiao", "value": "={{ $('Gerar Paginas').item.json.regiao }}",       "type": "string" },
+            { "id": "fc-url",    "name": "src_url",    "value": "={{ $('Gerar Paginas').item.json.url }}",          "type": "string" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a1b2c3d4-0010-0010-0010-a1b2c3d40010",
+      "name": "Juntar Streams",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [2220, 300],
+      "parameters": { "mode": "append" }
+    },
+    {
+      "id": "a1b2c3d4-0004-0004-0004-a1b2c3d40004",
+      "name": "Extrair e Normalizar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2440, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const allPages = $input.all();\nconst agora = new Date().toISOString();\nconst PRECO_MAX = 1800;\n\nfunction hashStr(str) {\n  let h = 0;\n  for (let i = 0; i < str.length; i++) { h = Math.imul(31, h) + str.charCodeAt(i) | 0; }\n  return Math.abs(h).toString(16).padStart(8, '0');\n}\n\nfunction toNum(val) {\n  if (val === null || val === undefined || val === '') return 0;\n  const s = String(val).replace('R$', '').replace(/[^0-9,]/g, '').replace(',', '.');\n  const n = parseFloat(s);\n  return (isNaN(n) || n < 0) ? 0 : n;\n}\n\nfunction getStr(obj, key) {\n  return (obj && obj[key] !== undefined && obj[key] !== null) ? String(obj[key]) : '';\n}\n\nfunction getAction(obj) {\n  const action = obj.potentialAction;\n  if (!action) return 0;\n  const arr = Array.isArray(action) ? action : [action];\n  for (let i = 0; i < arr.length; i++) {\n    const a = arr[i];\n    if (a.price !== undefined && a.price !== null && a.price !== '') {\n      const p = toNum(a.price);\n      if (p > 0) return p;\n    }\n  }\n  return 0;\n}\n\nfunction getPrice(obj) {\n  if (!obj) return 0;\n  const offers = obj.offers || {};\n  let p;\n  p = toNum(offers.price); if (p > 0) return p;\n  p = toNum(offers.lowPrice); if (p > 0) return p;\n  if (offers.priceSpecification) {\n    const ps = Array.isArray(offers.priceSpecification) ? offers.priceSpecification[0] : offers.priceSpecification;\n    p = toNum(ps && ps.price); if (p > 0) return p;\n  }\n  p = toNum(obj.price); if (p > 0) return p;\n  p = getAction(obj); if (p > 0) return p;\n  return 0;\n}\n\nfunction getDate(obj) {\n  const offers = obj && (obj.offers || {});\n  return getStr(obj, 'datePosted') ||\n         getStr(obj, 'datePublished') ||\n         getStr(obj, 'dateCreated') ||\n         (offers ? getStr(offers, 'validFrom') : '') ||\n         (offers ? getStr(offers, 'availabilityStarts') : '') || '';\n}\n\nfunction parseAddress(addrVal) {\n  if (!addrVal) return { streetAddress: '', addressLocality: '' };\n  if (typeof addrVal === 'string') {\n    const parts = addrVal.split(',').map(function(p) { return p.trim(); });\n    return { streetAddress: parts[0] || '', addressLocality: parts[1] || '' };\n  }\n  return { streetAddress: getStr(addrVal, 'streetAddress'), addressLocality: getStr(addrVal, 'addressLocality') };\n}\n\nfunction parseFloor(val) {\n  if (!val) return 0;\n  if (typeof val === 'number') return val;\n  if (typeof val === 'object' && val.value) return parseFloat(val.value) || 0;\n  return parseFloat(String(val)) || 0;\n}\n\nfunction priceFromDesc(desc) {\n  const m = String(desc || '').match(/[Aa]luguel[^:]*:\\s*[R][\\u0024]\\s*([\\d.,]+)/);\n  return m ? toNum(m[1]) : 0;\n}\n\nfunction extractItems(obj, regiao) {\n  const out = [];\n  if (!obj || typeof obj !== 'object') return out;\n  const type = getStr(obj, '@type') || getStr(obj, 'type');\n\n  if (type.includes('RealEstate') || type === 'Apartment') {\n    const mainArr = obj.mainEntity ? (Array.isArray(obj.mainEntity) ? obj.mainEntity : [obj.mainEntity]) : null;\n    if (mainArr && mainArr.length > 0) {\n      const topOffers = obj.offers || {};\n      const aggPrice = toNum(topOffers.lowPrice || topOffers.price || 0);\n      for (let i = 0; i < mainArr.length; i++) {\n        const item = mainArr[i];\n        const t2 = getStr(item, '@type') || getStr(item, 'type');\n        if (!t2.includes('RealEstate') && t2 !== 'Apartment') continue;\n        const iOff = item.offers || {};\n        const cLoc = item.contentLocation || {};\n        const addr = parseAddress(item.address);\n        const desc = getStr(item, 'description');\n        const preco = getPrice(item) || priceFromDesc(desc) || aggPrice;\n        const entry = {\n          titulo: (desc || getStr(item, 'name') || '').substring(0, 150).split('\\n')[0].trim(),\n          preco_raw: preco,\n          link: getStr(item, 'url') || getStr(iOff, 'url') || '',\n          imagem: Array.isArray(item.image) ? (item.image[0] || '') : getStr(item, 'image'),\n          descricao: desc,\n          quartos: parseInt(item.numberOfBedrooms || 0) || 0,\n          banheiros: parseInt(item.numberOfFullBathrooms || item.numberOfBathroomsTotal || item.numberOfBathrooms || 0) || 0,\n          metragem: parseFloor(item.floorSize),\n          bairro: getStr(cLoc, 'name') || addr.addressLocality || regiao,\n          endereco: addr.streetAddress,\n          data_anuncio: getStr(item, 'datePosted') || getStr(item, 'datePublished') || getStr(item, 'dateCreated') || ''\n        };\n        if (entry.titulo || entry.link) out.push(entry);\n      }\n    } else {\n      const offers = obj.offers || {};\n      const prop = offers.itemOffered || obj;\n      const addr = parseAddress(obj.address);\n      const preco = getPrice(obj);\n      const entry = {\n        titulo: getStr(obj, 'name'),\n        preco_raw: preco,\n        link: getStr(obj, 'url') || getStr(offers, 'url') || '',\n        imagem: Array.isArray(obj.image) ? (obj.image[0] || '') : getStr(obj, 'image'),\n        descricao: getStr(obj, 'description') || getStr(prop, 'description'),\n        quartos: parseInt(prop.numberOfBedrooms || obj.numberOfBedrooms || 0) || 0,\n        banheiros: parseInt(prop.numberOfFullBathrooms || prop.numberOfBathroomsTotal || prop.numberOfBathrooms || obj.numberOfFullBathrooms || obj.numberOfBathroomsTotal || obj.numberOfBathrooms || 0) || 0,\n        metragem: parseFloor(prop.floorSize || obj.floorSize),\n        bairro: addr.addressLocality || regiao,\n        endereco: addr.streetAddress,\n        data_anuncio: getDate(obj)\n      };\n      if (entry.titulo || entry.link) out.push(entry);\n    }\n  } else if (type === 'Product') {\n    const offers = obj.offers || {};\n    const preco = toNum(offers.price || offers.lowPrice || obj.price || 0);\n    const entry = {\n      titulo: getStr(obj, 'name'),\n      preco_raw: preco,\n      link: getStr(offers, 'url') || getStr(obj, 'url') || '',\n      imagem: Array.isArray(obj.image) ? (obj.image[0] || '') : getStr(obj, 'image'),\n      descricao: getStr(obj, 'description'),\n      quartos: 0, banheiros: 0, metragem: 0,\n      bairro: regiao, endereco: '', data_anuncio: getDate(obj)\n    };\n    if (entry.titulo || entry.link) out.push(entry);\n  } else {\n    if (obj.itemListElement) {\n      const arr = Array.isArray(obj.itemListElement) ? obj.itemListElement : [obj.itemListElement];\n      for (let j = 0; j < arr.length; j++) {\n        const found = extractItems(arr[j].item || arr[j], regiao);\n        for (let k = 0; k < found.length; k++) out.push(found[k]);\n      }\n    }\n    if (obj.mainEntity) {\n      const arr2 = Array.isArray(obj.mainEntity) ? obj.mainEntity : [obj.mainEntity];\n      for (let mi = 0; mi < arr2.length; mi++) {\n        const found2 = extractItems(arr2[mi], regiao);\n        for (let ni = 0; ni < found2.length; ni++) out.push(found2[ni]);\n      }\n    }\n  }\n  return out;\n}\n\nconst byUrl = {};\n\nfor (let pi = 0; pi < allPages.length; pi++) {\n  const page = allPages[pi];\n  const html = page.json.data || '';\n  const metodo = page.json.src_metodo || 'html_json_ld';\n  const siteOrigem = page.json.src_nome || '';\n  const regiao = page.json.src_regiao || '';\n\n  if (!html || typeof html !== 'string' || html.length < 200) continue;\n  if (html.includes('Cloudflare') && (html.includes('blocked') || html.includes('Just a moment'))) continue;\n\n  const raw = [];\n\n  if (metodo === 'json_embutido') {\n    const idx = html.indexOf('<script id=\"__NEXT_DATA__\"');\n    if (idx >= 0) {\n      const start = html.indexOf('>', idx) + 1;\n      const end = html.indexOf('</script>', start);\n      if (start > 0 && end > start) {\n        try {\n          const d = JSON.parse(html.substring(start, end));\n          const pp = (d.props || {}).pageProps || {};\n          const ads = pp.ads || ((pp.listingProps || {}).adList) || pp.adList || [];\n          for (let ai = 0; ai < ads.length; ai++) {\n            const a = ads[ai];\n            const loc = a.location || {};\n            const imgs = a.images || [];\n            raw.push({\n              titulo: a.subject || getStr(a, 'title') || '',\n              preco_raw: toNum(a.priceValue),\n              bairro: getStr(loc, 'neighbourhood') || getStr(loc, 'zone') || getStr(loc, 'city') || regiao,\n              link: getStr(a, 'url') || getStr(a, 'friendlyUrl') || '',\n              imagem: (imgs[0] || {}).originalImage || '',\n              descricao: getStr(a, 'body') || '',\n              data_anuncio: a.listTime ? new Date(a.listTime * 1000).toISOString() : '',\n              quartos: parseInt(a.rooms) || 0,\n              metragem: parseFloat(a.size) || 0,\n              banheiros: 0, endereco: ''\n            });\n          }\n        } catch(e) {}\n      }\n    }\n  } else if (metodo !== 'playwright') {\n    const re = /<script[^>]*type=[\"']application\\/ld[+]json[\"'][^>]*>([\\s\\S]*?)<\\/script>/gi;\n    let ldMatch;\n    while ((ldMatch = re.exec(html)) !== null) {\n      try {\n        const d = JSON.parse(ldMatch[1]);\n        const tops = Array.isArray(d) ? d : [d];\n        for (let ti = 0; ti < tops.length; ti++) {\n          const found = extractItems(tops[ti], regiao);\n          for (let fi = 0; fi < found.length; fi++) raw.push(found[fi]);\n        }\n      } catch(e) {}\n    }\n  }\n\n  for (let ri = 0; ri < raw.length; ri++) {\n    const l = raw[ri];\n    if (!l.link || !l.titulo) continue;\n    const preco = l.preco_raw || 0;\n    const urlKey = l.link.split('?')[0].split('#')[0];\n    if (byUrl[urlKey]) {\n      if (preco > byUrl[urlKey].preco_raw) {\n        byUrl[urlKey] = Object.assign({}, l, { siteOrigem: siteOrigem, regiao: regiao });\n      }\n      continue;\n    }\n    byUrl[urlKey] = Object.assign({}, l, { siteOrigem: siteOrigem, regiao: regiao });\n  }\n}\n\nconst results = [];\nconst urlKeys = Object.keys(byUrl);\n\nfor (let ui = 0; ui < urlKeys.length; ui++) {\n  const l = byUrl[urlKeys[ui]];\n  const preco = l.preco_raw || 0;\n  if (preco <= 0 || preco > PRECO_MAX) continue;\n  const desc = (l.titulo + ' ' + (l.descricao || '')).toLowerCase();\n  const vaga = desc.includes('vaga') || desc.includes('garagem');\n  const mobiliado = desc.includes('mobiliado') || desc.includes('mobiliada');\n  const tags = [];\n  if (preco <= 1500) tags.push('abaixo_orcamento');\n  tags.push('total_ate_1800');\n  if (vaga) tags.push('vaga');\n  if (mobiliado) tags.push('mobiliado');\n  if (preco <= 1500 && vaga) tags.push('boa_oportunidade');\n  tags.push('anuncio_novo');\n  const out = {};\n  out.hash = hashStr(urlKeys[ui]);\n  out.titulo = l.titulo.substring(0, 200);\n  out.preco_aluguel = preco;\n  out.condominio = 0;\n  out.total_estimado = preco;\n  out.bairro = l.bairro || l.regiao;\n  out.regiao = l.regiao;\n  out.endereco = l.endereco || '';\n  out.quartos = l.quartos || 0;\n  out.banheiros = l.banheiros || 0;\n  out.metragem = l.metragem || 0;\n  out.vaga = vaga ? 'TRUE' : 'FALSE';\n  out.descricao = (l.descricao || '').substring(0, 500);\n  out.link = l.link;\n  out.imagem_principal = l.imagem || '';\n  out.anunciante = '';\n  out.telefone = '';\n  out.whatsapp = '';\n  out.site_origem = l.siteOrigem;\n  out.data_coleta = agora;\n  out.data_anuncio = l.data_anuncio || '';\n  out.data_atualizacao = agora;\n  out.tags = tags.join(',');\n  out.status = 'novo';\n  out.destaque = 'FALSE';\n  results.push({ json: out });\n}\n\nif (results.length === 0) {\n  return [{ json: { _info: 'nenhum anuncio encontrado' } }];\n}\nreturn results;"
+      }
+    },
+    {
+      "id": "a1b2c3d4-0005-0005-0005-a1b2c3d40005",
+      "name": "Salvar no Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [2660, 300],
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "value": "SEU_SHEET_ID_AQUI", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "listings_clean", "mode": "name" },
+        "columns": { "mappingMode": "autoMapInputData", "value": {}, "matchingColumns": [], "schema": [], "ignoreCase": true, "attemptToAutoMatch": true },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "SEU_CREDENTIAL_ID", "name": "Google Sheets - Paulo" }
+      }
+    }
+  ],
+  "connections": {
+    "A cada 6 horas":    { "main": [[{ "node": "Ler Fontes Ativas",    "type": "main", "index": 0 }]] },
+    "Ler Fontes Ativas": { "main": [[{ "node": "Filtrar Ativas",       "type": "main", "index": 0 }]] },
+    "Filtrar Ativas":    { "main": [[{ "node": "Gerar Paginas",        "type": "main", "index": 0 }]] },
+    "Gerar Paginas":     { "main": [[{ "node": "Buscar Pagina",        "type": "main", "index": 0 }]] },
+    "Buscar Pagina":     { "main": [[{ "node": "Combinar Fonte",       "type": "main", "index": 0 }]] },
+    "Combinar Fonte":    { "main": [[{ "node": "Bloqueado?",           "type": "main", "index": 0 }]] },
+    "Bloqueado?": {
+      "main": [
+        [{ "node": "Firecrawl API",   "type": "main", "index": 0 }],
+        [{ "node": "Juntar Streams",  "type": "main", "index": 0 }]
+      ]
+    },
+    "Firecrawl API":     { "main": [[{ "node": "HTML do Firecrawl",   "type": "main", "index": 0 }]] },
+    "HTML do Firecrawl": { "main": [[{ "node": "Juntar Streams",      "type": "main", "index": 1 }]] },
+    "Juntar Streams":    { "main": [[{ "node": "Extrair e Normalizar","type": "main", "index": 0 }]] },
+    "Extrair e Normalizar": { "main": [[{ "node": "Salvar no Sheets", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true
+  }
+}
